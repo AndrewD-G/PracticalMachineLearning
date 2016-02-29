@@ -1,0 +1,133 @@
+---
+title: "Practical Machine Learning Prediction Assignment"
+date: "26 February 2016"
+output: html_document
+---
+# Practical Machine Learning Prediction Assignment
+
+## Background
+Using data from Human Activity Recognition devices we are required to undertake data analysis on the data at http://groupware.les.inf.puc-rio.br/har.  
+  
+The goal of the excercise is to predict the manner in which exercise was conducted either correctly being classe "A" or the incorrect options being classe's "B through E".
+
+``` {r}
+suppressMessages(library("dplyr"))
+require(dplyr)
+suppressMessages(library("tree"))
+require(tree)
+suppressMessages(library("caret"))
+require(caret)
+require(ggplot2)
+suppressMessages(library("rattle"))
+require(rattle)
+set.seed(5436)
+```
+
+
+## Getting the data
+```{r, echo=TRUE}
+if(!getwd()== "C:/R/pml"){
+        dir.create("C:/R/pml");
+        setwd("C:/R/pml")
+        download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", "pml_train.csv")
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", "pml_test.csv")
+                        }
+```
+
+
+## Cleaning the data  
+After undertaking an initial review of the data I remove factor variables and non numeric data from the initial view of the training data set being columns 1,2,5,6,7.
+
+I then removed variables with:  
+1. zero variance,  
+2. columnns with NA values, and   
+3. highly correlated data.
+
+
+```{r, cache=TRUE, echo=TRUE}
+options(warn = -1)
+# Load test data 
+train <- read.csv("pml_train.csv", na.strings = c("NA","","#DIV/0"))
+
+# subset the train data to undertake validation prior to using the test data
+inTrain = createDataPartition(train$classe  , p = 3/4)[[1]]
+
+training <- train[inTrain,]
+vldtn <- train[-inTrain,]
+
+test <- read.csv("pml_test.csv", na.strings = c("NA","","#DIV/0"))
+
+
+##  Cleaning the data
+#Initially I retrieved only the information pertaining to accelerometers on the belt, forearm, arm, and dumbell.  This was a dumb move.
+# subs <- grep("class|belt|forearm|arm|dumbell ", names(train), value = TRUE)
+#training <- training[,subs]
+training <- training[,-c(1,2,5,6,7)]
+
+# find and remove values with zero variance 
+        nzv <- nearZeroVar(training[,-55]+1, saveMetrics = T)
+        training <- training[,nzv$zeroVar == FALSE]
+
+
+# remove columns with NAs
+# code at stack overflow re finding columns with missing values
+        NaVal <- sapply(training, function (x) any(is.na(x) | x == ""))
+        training <- training[,NaVal != T]
+
+
+```
+
+# Initial Analysis
+
+Loading the training data into a tree from the tree package we are able to look at a plot of the data to see what trends may be evident. We can see that there are a number of leaves from the tree but can't see what may be causing them that at this point.  
+
+The summary of the tree show the twelve variables most prominent in the creation of the tree.
+
+
+```{r, cache=TRUE, echo=TRUE}
+init_tree <- tree(classe~., data = na.omit(training))
+ plot(init_tree)
+summary(init_tree)
+
+
+# find and remove values with high correlation
+ncl <- ncol(training)
+t <- findCorrelation(training[,-51], cutoff = 0.9, exact = F)
+training <- training[,-t]
+
+
+```
+
+
+## Model Fitting  
+
+I've chosen two model methods to fit over the data, being rpart to fit a regression model and random forest.  The train control option was selected as the initial random forest method was going over time.  
+
+```{r, cache=TRUE, echo=TRUE}
+
+trCont <- trainControl(method = "cv", number = 10 )
+modFit <- train(classe ~., data = training, method ="rpart", trControl = trCont )
+modFit2 <- train(classe ~., data = training, method ="rf", trControl = trCont)
+
+```
+
+The summary of the rpart model shows a median accuracy level of 37.9% which is not good enough to use for prediction.
+
+```{r, cache=TRUE, echo = TRUE}
+summary(modFit$results)
+fancyRpartPlot(modFit$finalModel)
+```
+  
+While the highest value of accuracy of the random forests is 85.3% as listed below.
+
+```{r, cache=TRUE, echo = TRUE}
+summary(modFit2$results)
+
+```
+
+The final answers for the quiz outcome can be obtained by predicting on modFit2 against the test data.
+I'm not showing this as that isn't the point of this exercise.
+
+
+
+
